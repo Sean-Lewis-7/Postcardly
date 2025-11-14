@@ -9,11 +9,21 @@ import javafx.geometry.Pos;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.ScrollPane;
+import javafx.scene.control.TextField;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.*;
 import javafx.stage.Stage;
 import projects.postcardly.PostcardlyApp;
 import projects.postcardly.model.Trip;
 import projects.postcardly.model.User;
+import projects.postcardly.service.DataManager;
+
+import java.awt.*;
+import java.io.File;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 
@@ -32,12 +42,14 @@ public class TripsMenuController {
     @FXML
     public void initialize() {
         // Get the current user from the app
-        User user = PostcardlyApp.getCurrentUser();
+        User user = DataManager.loadUser();
 
         if (user == null) {
             System.err.println("ERROR: No current user set!");
             return;
         }
+
+        PostcardlyApp.setCurrentUser(user);
 
         this.currentUser = user;
 
@@ -87,16 +99,44 @@ public class TripsMenuController {
                         "-fx-cursor: hand;"
         ));
 
-        // Image placeholder (for future: will show trip cover image)
+        // --- Image placeholder or cover image ---
         StackPane imagePlaceholder = new StackPane();
         imagePlaceholder.setPrefSize(240, 140);
-        imagePlaceholder.setStyle(
-                "-fx-background-color: linear-gradient(to bottom right, #3498DB, #2ECC71); " +
-                        "-fx-background-radius: 10;"
-        );
-        Label imageLabel = new Label("📸");
-        imageLabel.setStyle("-fx-font-size: 40px;");
-        imagePlaceholder.getChildren().add(imageLabel);
+        imagePlaceholder.setStyle("-fx-background-radius: 10;");
+
+        if (trip.getCoverImagePath() != null && !trip.getCoverImagePath().isEmpty()) {
+            try {
+                Image image = new Image(new File(trip.getCoverImagePath()).toURI().toString());
+                ImageView imageView = new ImageView(image);
+                imageView.setFitWidth(240);
+                imageView.setFitHeight(140);
+                imageView.setPreserveRatio(true);
+
+
+                imagePlaceholder.getChildren().add(imageView);
+            } catch (Exception e) {
+                System.err.println("Failed to load trip image: " + e.getMessage());
+                // fallback to placeholder label
+                Label imageLabel = new Label("📸");
+                imageLabel.setStyle("-fx-font-size: 40px;");
+                imagePlaceholder.getChildren().add(imageLabel);
+                imagePlaceholder.setStyle(
+                        "-fx-background-color: linear-gradient(to bottom right, #3498DB, #2ECC71); " +
+                                "-fx-background-radius: 10;"
+                );
+            }
+        } else {
+            // No image, show placeholder
+            Label imageLabel = new Label("📸");
+            imageLabel.setStyle("-fx-font-size: 40px;");
+            imagePlaceholder.getChildren().add(imageLabel);
+            imagePlaceholder.setStyle(
+                    "-fx-background-color: linear-gradient(to bottom right, #3498DB, #2ECC71); " +
+                            "-fx-background-radius: 10;"
+            );
+        }
+
+
 
         // Trip title
         Label titleLabel = new Label(trip.getTitle());
@@ -134,6 +174,37 @@ public class TripsMenuController {
         Region spacer = new Region();
         VBox.setVgrow(spacer, Priority.ALWAYS);
 
+        // --- Delete button ---
+        Button deleteButton = new Button("Delete Trip");
+        deleteButton.setStyle(
+                "-fx-background-color: #E74C3C; " +
+                        "-fx-text-fill: white; " +
+                        "-fx-font-weight: bold; " +
+                        "-fx-background-radius: 10;"
+        );
+        deleteButton.setPrefWidth(240);
+
+        deleteButton.setOnAction(e -> {
+            // Prevent the click from triggering card click
+            e.consume();
+
+            Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+            confirm.setTitle("Delete Trip");
+            confirm.setHeaderText("Are you sure you want to delete \"" + trip.getTitle() + "\"?");
+            confirm.showAndWait().ifPresent(response -> {
+                if (response == ButtonType.OK) {
+                    // Remove from user
+                    currentUser.getTrips().remove(trip);
+                    // Save changes
+                    DataManager.saveUser(currentUser);
+                    // Update list and UI
+                    tripList.remove(trip);
+                    displayTripCards();
+                    updateTripCount();
+                }
+            });
+        });
+
         // Add click handler to view trip
         card.setOnMouseClicked(e -> handleViewTrip(trip));
 
@@ -144,7 +215,8 @@ public class TripsMenuController {
                 locationBox,
                 dateLabel,
                 spacer,
-                memoryBox
+                memoryBox,
+                deleteButton
         );
 
         return card;
@@ -175,8 +247,23 @@ public class TripsMenuController {
 
     @FXML
     private void handleCreateTrip() {
-        System.out.println("Create Trip clicked");
-        showAlert("Create Trip", "Create trip functionality coming soon!");
+        try {
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("/projects/postcardly/CreateTrip.fxml"));
+            Parent createTripRoot = loader.load();
+
+            // Optional: Pass the current user to the CreateTrip controller
+            // CreateTripController controller = loader.getController();
+            // controller.setUser(currentUser);
+
+            Stage stage = (Stage) createTripButton.getScene().getWindow();
+            Scene createTripScene = new Scene(createTripRoot);
+
+            stage.setScene(createTripScene);
+            stage.setTitle("Postcardly - Create Trip");
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private void handleViewTrip(Trip trip) {
